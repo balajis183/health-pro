@@ -210,12 +210,12 @@
                     <div class="grid-2">
                         <div class="card">
                             <div class="card-title">👁️ Eye Care Score</div>
-                            <div style="font-size: 48px; font-weight: 700; color: var(--color-secondary); margin: 20px 0;">85%</div>
+                            <div id="eyeCareScoreValue" style="font-size: 48px; font-weight: 700; color: var(--color-secondary); margin: 20px 0;">85%</div>
                             <div style="color: var(--color-text-secondary); font-size: 13px; margin-bottom: 15px;">Excellent eye health practices</div>
                         </div>
                         <div class="card">
                             <div class="card-title">🏥 Health Score</div>
-                            <div style="font-size: 48px; font-weight: 700; color: var(--color-success); margin: 20px 0;">92%</div>
+                            <div id="healthScoreValue" style="font-size: 48px; font-weight: 700; color: var(--color-success); margin: 20px 0;">92%</div>
                             <div style="color: var(--color-text-secondary); font-size: 13px; margin-bottom: 15px;">Great overall wellness</div>
                         </div>
                     </div>
@@ -449,6 +449,9 @@
             // start hydration timer if enabled
             if (hydrationEnabled) scheduleNextHydration();
             setInterval(updateHydrationCountdown, 1000);
+
+            // update computed statistics on load
+            updateStatisticsUI();
         });
 
         // scheduling helpers
@@ -694,6 +697,8 @@
             if (streakEl) { streakEl.textContent = getHydrationStreak(); animateStat(streakEl); }
             // update progress ring
             updateProgressRing();
+            // update the larger statistics (Eye Care / Health)
+            updateStatisticsUI();
         }
 
         function saveStats() { localStorage.setItem('hp_stats', JSON.stringify(stats)); }
@@ -840,6 +845,44 @@
                 osc.start(ac.currentTime);
                 osc.stop(ac.currentTime + 0.5);
             } catch (e) {}
+        }
+
+        // ----- Dynamic Statistics (computed from logs) -----
+        function countTodayActivityByKeyword(keyword) {
+            const today = dayjs().format('YYYY-MM-DD');
+            return activityLog.filter(a => a.name && a.name.toLowerCase().includes(keyword) && dayjs(a.ts).format('YYYY-MM-DD') === today).length;
+        }
+
+        function countTodayHydration() {
+            const today = dayjs().format('YYYY-MM-DD');
+            return activityLog.filter(a => a.name && (a.name.toLowerCase().includes('water') || a.name.toLowerCase().includes('hydration')) && dayjs(a.ts).format('YYYY-MM-DD') === today).length;
+        }
+
+        function computeEyeCareScore() {
+            const eyeCount = countTodayActivityByKeyword('eye');
+            const eyeRatio = Math.min(1, eyeCount / 2); // expect ~2 eye exercises per day
+            const hydrCount = countTodayHydration();
+            const hydrRatio = Math.min(1, hydrCount / 6); // target ~6 hydration checks/day
+            // weighted blend: 60% eye exercises, 40% hydration
+            return Math.round((eyeRatio * 0.6 + hydrRatio * 0.4) * 100);
+        }
+
+        function computeHealthScore() {
+            const total = scheduleData.length || 1;
+            const activityRatio = Math.min(1, stats.activities / total);
+            const hydrRatio = Math.min(1, countTodayHydration() / 6);
+            const breaksRatio = Math.min(1, stats.breaks / 3);
+            // weighted blend: activities (50%), hydration (30%), breaks (20%)
+            return Math.round((activityRatio * 0.5 + hydrRatio * 0.3 + breaksRatio * 0.2) * 100);
+        }
+
+        function updateStatisticsUI() {
+            const eye = computeEyeCareScore();
+            const health = computeHealthScore();
+            const eyeEl = document.getElementById('eyeCareScoreValue');
+            const healthEl = document.getElementById('healthScoreValue');
+            if (eyeEl) { eyeEl.textContent = `${eye}%`; animateStat(eyeEl); }
+            if (healthEl) { healthEl.textContent = `${health}%`; animateStat(healthEl); }
         }
     </script>
 </body>
