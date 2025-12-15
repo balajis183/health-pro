@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Eye Health & Wellness Pro - Ultimate Dashboard</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/dayjs@1.11.7/dayjs.min.js"></script>
+    <script src="https://unpkg.com/dayjs@1.11.7/plugin/customParseFormat.js"></script>
+    <script>dayjs.extend(window.dayjs_plugin_customParseFormat);</script>
 </head>
 <body class="dark-mode">
     <div class="app-wrapper">
@@ -36,7 +39,7 @@
 
             <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--color-border);">
                 <div style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 10px;">🌓 Theme</div>
-                <button class="toggle-switch active" onclick="toggleDarkMode()" style="width: 100%;"></button>
+                <button id="themeToggle" class="toggle-switch" onclick="toggleDarkMode()" role="switch" aria-pressed="true" aria-checked="true" title="Toggle theme"></button>
             </div>
         </div>
 
@@ -61,9 +64,9 @@
                     <div class="grid-2">
                         <div class="card">
                             <div class="card-title">📈 Today's Progress</div>
-                            <div class="progress-ring" style="--percentage: 45%;" data-percent="45%"></div>
+                            <div id="progressRing" class="progress-ring" style="--percentage: 0%;" data-percent="0%"></div>
                             <div style="text-align: center; margin-top: 20px;">
-                                <div style="font-size: 13px; color: var(--color-text-secondary);">45% of day activities completed</div>
+                                <div id="progressText" style="font-size: 13px; color: var(--color-text-secondary);">0% of day activities completed</div>
                             </div>
                         </div>
 
@@ -105,6 +108,19 @@
                     <div class="card">
                         <div class="card-title">🔔 Next 2 Hours</div>
                         <div id="upcomingReminders" class="timeline"></div>
+                    </div>
+
+                    <!-- HYDRATION TIMER -->
+                    <div class="card">
+                        <div class="card-title">⏱ Hydration Timer</div>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div style="color: var(--color-text-secondary);">Next hydration in</div>
+                            <div id="hydrationCountdown" style="font-weight:700; color:var(--color-secondary);">--:--</div>
+                        </div>
+                        <div style="margin-top:12px; display:flex; gap:10px;">
+                            <button class="btn btn-primary btn-sm" onclick="triggerHydrationReminder()">💧 Log Now</button>
+                            <button class="btn btn-secondary btn-sm" id="skipHydrationBtn" onclick="skipHydrationReminder()">⏭ Skip</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -164,12 +180,12 @@
                     <div class="grid-2">
                         <div class="card">
                             <div class="card-title">📊 This Week</div>
-                            <div style="font-size: 28px; font-weight: 700; color: var(--color-secondary);">245</div>
+                            <div id="weekStatValue" style="font-size: 28px; font-weight: 700; color: var(--color-secondary);">0</div>
                             <div style="color: var(--color-text-secondary); font-size: 13px;">Activities Completed</div>
                         </div>
                         <div class="card">
                             <div class="card-title">💧 Hydration Streak</div>
-                            <div style="font-size: 28px; font-weight: 700; color: var(--color-secondary);">12</div>
+                            <div id="hydrationStreakValue" style="font-size: 28px; font-weight: 700; color: var(--color-secondary);">0</div>
                             <div style="color: var(--color-text-secondary); font-size: 13px;">Days in a row</div>
                         </div>
                     </div>
@@ -224,15 +240,19 @@
                         <div class="card-title">🔧 Settings</div>
                         <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 0; border-bottom: 1px solid var(--color-border);">
                             <div>🔔 Enable Notifications</div>
-                            <button class="toggle-switch active"></button>
+                            <button id="notifToggle" class="toggle-switch active"></button>
                         </div>
                         <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 0; border-bottom: 1px solid var(--color-border);">
                             <div>🔊 Sound Alerts</div>
-                            <button class="toggle-switch active"></button>
+                            <button id="soundToggle" class="toggle-switch active"></button>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 0;">
+                            <div>⏲️ 20-min Hydration Reminder</div>
+                            <button id="hydrationToggle" class="toggle-switch active"></button>
                         </div>
                         <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 0;">
                             <div>📊 Share Analytics (Anonymous)</div>
-                            <button class="toggle-switch"></button>
+                            <button class="toggle-switch" id="shareToggle"></button>
                         </div>
                     </div>
                 </div>
@@ -348,6 +368,18 @@
             activities: 0
         };
 
+        // user preferences
+        let notificationsEnabled = true;
+        let soundEnabled = true;
+
+        // Activity log and hydration tracking
+        let activityLog = []; // { name, ts }
+        let hydrationDates = []; // ['YYYY-MM-DD']
+        const hydrationIntervalMinutes = 20;
+        let hydrationEnabled = true;
+        let nextHydrationAt = null;
+        let hydrationTimerId = null;
+
         let currentExerciseTab = 'eye';
 
         // Initialize
@@ -356,10 +388,147 @@
             renderActivities();
             renderEyeExercises();
             renderHealthTips();
+
+            // load persisted data
+            loadActivityLog();
+            loadHydrationDates();
+            loadStats();
+            updateStatsUI();
+
             updateTime();
             setInterval(updateTime, 1000);
-            setInterval(checkTimeAndNotify, 1000);
+
+            // wire basic toggles
+            notificationsEnabled = JSON.parse(localStorage.getItem('hp_notifications') ?? 'true');
+            soundEnabled = JSON.parse(localStorage.getItem('hp_sound') ?? 'true');
+            hydrationEnabled = JSON.parse(localStorage.getItem('hp_hydration_enabled') ?? 'true');
+            // theme persistence
+            const savedTheme = localStorage.getItem('hp_theme');
+            const themeToggleEl = document.getElementById('themeToggle');
+            if (savedTheme) {
+                document.body.classList.toggle('dark-mode', savedTheme === 'dark');
+                document.body.classList.toggle('light-mode', savedTheme !== 'dark');
+            }
+            if (themeToggleEl) {
+                const isDark = document.body.classList.contains('dark-mode');
+                themeToggleEl.classList.toggle('active', isDark);
+                themeToggleEl.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+                themeToggleEl.setAttribute('aria-checked', isDark ? 'true' : 'false');
+            }
+
+            const notifEl = document.getElementById('notifToggle');
+            const soundEl = document.getElementById('soundToggle');
+            const hydrEl = document.getElementById('hydrationToggle');
+
+            if (notifEl) notifEl.classList.toggle('active', notificationsEnabled);
+            if (soundEl) soundEl.classList.toggle('active', soundEnabled);
+            if (hydrEl) hydrEl.classList.toggle('active', hydrationEnabled);
+
+            if (notifEl) notifEl.addEventListener('click', () => {
+                notificationsEnabled = !notificationsEnabled;
+                notifEl.classList.toggle('active', notificationsEnabled);
+                localStorage.setItem('hp_notifications', JSON.stringify(notificationsEnabled));
+                if (notificationsEnabled) requestNotificationPermission();
+            });
+            if (soundEl) soundEl.addEventListener('click', () => {
+                soundEnabled = !soundEnabled;
+                soundEl.classList.toggle('active', soundEnabled);
+                localStorage.setItem('hp_sound', JSON.stringify(soundEnabled));
+            });
+            if (hydrEl) hydrEl.addEventListener('click', () => {
+                hydrationEnabled = !hydrationEnabled;
+                hydrEl.classList.toggle('active', hydrationEnabled);
+                localStorage.setItem('hp_hydration_enabled', JSON.stringify(hydrationEnabled));
+                if (hydrationEnabled) scheduleNextHydration(); else { if (hydrationTimerId) clearTimeout(hydrationTimerId); hydrationTimerId = null; nextHydrationAt = null; updateHydrationCountdown(); }
+            });
+
+            renderUpcomingReminders();
+            setInterval(updateCountdowns, 1000);
+            scheduleAllReminders();
+
+            // start hydration timer if enabled
+            if (hydrationEnabled) scheduleNextHydration();
+            setInterval(updateHydrationCountdown, 1000);
         });
+
+        // scheduling helpers
+        let scheduledTimers = [];
+
+        function parseTimeToDate(timeStr) {
+            const parsed = dayjs(timeStr, 'HH:mm');
+            const now = dayjs();
+            return now.hour(parsed.hour()).minute(parsed.minute()).second(0).millisecond(0);
+        }
+
+        function scheduleAllReminders() {
+            // clear any existing
+            scheduledTimers.forEach(id => clearTimeout(id));
+            scheduledTimers = [];
+
+            const now = dayjs();
+            scheduleData.forEach(item => {
+                const d = parseTimeToDate(item.time);
+                if (d.isAfter(now)) {
+                    const ms = d.diff(now, 'millisecond');
+                    const id = setTimeout(() => triggerReminder(item), ms);
+                    scheduledTimers.push(id);
+                }
+            });
+            renderUpcomingReminders();
+        }
+
+        function triggerReminder(item) {
+            // gentle logging and stats
+            stats.activities++;
+            if ((item.activity || '').toLowerCase().includes('water')) { stats.water++; addHydrationDate(); saveHydrationDates(); }
+            saveStats();
+            activityLog.push({ name: item.activity || 'Scheduled', ts: new Date().toISOString() });
+            saveActivityLog();
+            updateStatsUI();
+
+            const title = `⏰ ${item.activity}`;
+            const body = `Time to ${item.activity.toLowerCase()} (${item.duration || ''})`;
+            if (notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
+                try { new Notification(title, { body }); } catch(e) {}
+            } else showNotification(title, body, 'warning');
+            if (soundEnabled) playAlarm();
+
+            // show modal
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalText').textContent = body;
+            document.getElementById('notificationModal').classList.add('active');
+
+            // refresh upcoming
+            renderUpcomingReminders();
+        }
+
+        function renderUpcomingReminders() {
+            const container = document.getElementById('upcomingReminders');
+            const now = dayjs();
+            const upcoming = scheduleData.filter(i => parseTimeToDate(i.time).isAfter(now)).slice(0, 6);
+            container.innerHTML = upcoming.map(i => `
+                <div class="timeline-item">
+                    <div class="timeline-time">${i.time}</div>
+                    <div class="timeline-activity">${i.activity} • ${i.duration}</div>
+                </div>
+            `).join('') || '<div style="color:var(--color-text-secondary); padding: 15px;">No upcoming items</div>';
+        }
+
+        function updateCountdowns() {
+            const now = dayjs();
+            const upcoming = scheduleData.map(i => ({ item: i, date: parseTimeToDate(i.time) })).filter(o => o.date.isAfter(now));
+            upcoming.sort((a,b) => a.date - b.date);
+            const next = upcoming[0];
+            if (next) {
+                document.getElementById('nextActivity').textContent = `${next.item.activity}`;
+                const diff = next.date.diff(now, 'minute');
+                document.getElementById('nextActivityTime').textContent = diff <= 0 ? 'Now' : `${diff} min`;
+            } else {
+                document.getElementById('nextActivity').textContent = '—';
+                document.getElementById('nextActivityTime').textContent = '--';
+            }
+            renderUpcomingReminders();
+        }
 
         function switchPage(pageName) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -457,12 +626,17 @@
             }
             if (name.includes('Water')) {
                 stats.water++;
+                addHydrationDate();
+                saveHydrationDates();
             }
-            
-            document.getElementById('activitiesStat').textContent = stats.activities;
-            document.getElementById('eyeExercisesStat').textContent = stats.eyeExercises;
-            document.getElementById('waterStat').textContent = stats.water;
-            
+
+            // record to activity log
+            activityLog.push({ name, ts: new Date().toISOString() });
+            saveActivityLog();
+
+            saveStats();
+            updateStatsUI();
+
             showNotification('✅ Logged!', `${name} recorded successfully`, 'success');
         }
 
@@ -474,9 +648,130 @@
             setTimeout(() => notif.remove(), 5000);
         }
 
+        // ----- Activity log & hydration persistence helpers -----
+        function saveActivityLog() { localStorage.setItem('hp_activityLog', JSON.stringify(activityLog)); }
+        function loadActivityLog() { try { const raw = localStorage.getItem('hp_activityLog'); if (raw) activityLog = JSON.parse(raw); } catch(e){ activityLog = []; } }
+        function saveHydrationDates() { localStorage.setItem('hp_hydration_dates', JSON.stringify(hydrationDates)); }
+        function loadHydrationDates() { try { const raw = localStorage.getItem('hp_hydration_dates'); if (raw) hydrationDates = JSON.parse(raw); } catch(e){ hydrationDates = []; } }
+
+        function addHydrationDate() {
+            const today = dayjs().format('YYYY-MM-DD');
+            if (!hydrationDates.includes(today)) {
+                hydrationDates.push(today);
+                hydrationDates = hydrationDates.slice(-60);
+                saveHydrationDates();
+            }
+        }
+
+        function getHydrationStreak() {
+            if (!hydrationDates.length) return 0;
+            const set = new Set(hydrationDates);
+            let streak = 0;
+            let day = dayjs();
+            while (true) {
+                const d = day.format('YYYY-MM-DD');
+                if (set.has(d)) { streak++; day = day.subtract(1, 'day'); } else break;
+            }
+            return streak;
+        }
+
+        function getWeekActivityCount() {
+            loadActivityLog();
+            const start = dayjs().startOf('week');
+            return activityLog.filter(a => dayjs(a.ts).isAfter(start)).length;
+        }
+
+        function updateStatsUI() {
+            // quick stats
+            document.getElementById('activitiesStat').textContent = stats.activities;
+            document.getElementById('eyeExercisesStat').textContent = stats.eyeExercises;
+            document.getElementById('waterStat').textContent = stats.water;
+            document.getElementById('breaksStat').textContent = stats.breaks;
+            // progress page
+            const weekEl = document.getElementById('weekStatValue');
+            const streakEl = document.getElementById('hydrationStreakValue');
+            if (weekEl) { weekEl.textContent = getWeekActivityCount(); animateStat(weekEl); }
+            if (streakEl) { streakEl.textContent = getHydrationStreak(); animateStat(streakEl); }
+            // update progress ring
+            updateProgressRing();
+        }
+
+        function saveStats() { localStorage.setItem('hp_stats', JSON.stringify(stats)); }
+        function loadStats() { try { const raw = localStorage.getItem('hp_stats'); if (raw) stats = JSON.parse(raw); } catch(e) { stats = { water:0, breaks:0, eyeExercises:0, activities:0 }; } }
+
+        function animateStat(el) {
+            if (!el) return;
+            el.classList.add('stat-flash');
+            setTimeout(() => el.classList.remove('stat-flash'), 500);
+        }
+
+        function updateProgressRing() {
+            const total = Array.isArray(scheduleData) ? scheduleData.length : 0;
+            const done = Number(stats.activities || 0);
+            const percent = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+            const ring = document.getElementById('progressRing');
+            const text = document.getElementById('progressText');
+            if (ring) {
+                ring.style.setProperty('--percentage', `${percent}%`);
+                ring.setAttribute('data-percent', `${percent}%`);
+            }
+            if (text) {
+                text.textContent = `${percent}% of day activities completed`;
+                animateStat(text);
+            }
+        }
+
+        // hydrate scheduling
+        function scheduleNextHydration() {
+            if (!hydrationEnabled) return;
+            nextHydrationAt = dayjs().add(hydrationIntervalMinutes, 'minute');
+            if (hydrationTimerId) clearTimeout(hydrationTimerId);
+            const ms = nextHydrationAt.diff(dayjs(), 'millisecond');
+            hydrationTimerId = setTimeout(() => {
+                triggerHydrationReminder();
+                scheduleNextHydration();
+            }, ms);
+        }
+
+        function updateHydrationCountdown() {
+            const el = document.getElementById('hydrationCountdown');
+            if (!hydrationEnabled || !nextHydrationAt) { if (el) el.textContent = '--:--'; return; }
+            const diff = nextHydrationAt.diff(dayjs(), 'second');
+            if (diff <= 0) { if (el) el.textContent = 'Now'; }
+            else { const m = Math.floor(diff/60); const s = diff%60; if (el) el.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; }
+        }
+
+        function triggerHydrationReminder() {
+            stats.water++;
+            addHydrationDate();
+            activityLog.push({ name: '💧 Hydration Reminder', ts: new Date().toISOString() });
+            saveHydrationDates(); saveActivityLog(); saveStats(); updateStatsUI();
+
+            const title = '💧 Time to hydrate';
+            const body = 'Take a sip of water and do a quick eye break.';
+            if (notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
+                try { new Notification(title, { body }); } catch(e) {}
+            } else showNotification(title, body, 'warning');
+            if (soundEnabled) playAlarm();
+            document.getElementById('notificationModal').classList.add('active');
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalText').textContent = body;
+        }
+
+        function skipHydrationReminder() { scheduleNextHydration(); showNotification('⏭ Skipped', 'Next hydration scheduled', 'success'); }
+
         function toggleDarkMode() {
-            document.body.classList.toggle('dark-mode');
-            document.body.classList.toggle('light-mode');
+            const themeToggleEl = document.getElementById('themeToggle');
+            const isDark = document.body.classList.toggle('dark-mode');
+            document.body.classList.toggle('light-mode', !isDark);
+            // persist
+            localStorage.setItem('hp_theme', isDark ? 'dark' : 'light');
+            // update toggle UI
+            if (themeToggleEl) {
+                themeToggleEl.classList.toggle('active', isDark);
+                themeToggleEl.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+                themeToggleEl.focus();
+            }
         }
 
         function openCustomizeModal() {
@@ -493,9 +788,29 @@
             document.getElementById('notificationModal').classList.remove('active');
         }
 
+        function requestNotificationPermission() {
+            if (!('Notification' in window)) return;
+            if (Notification.permission === 'default') {
+                Notification.requestPermission().then(p => {
+                    if (p === 'granted') showNotification('✅ Notifications enabled', 'You will receive system reminders', 'success');
+                });
+            }
+        }
+
         function snoozeReminder() {
             closeModal();
             showNotification('😴 Snoozed', 'Reminder in 5 minutes', 'success');
+            setTimeout(() => {
+                // re-fire a brief reminder
+                if (soundEnabled) playAlarm();
+                if (notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
+                    try { new Notification('⏰ Reminder', { body: 'Reminder: time for your activity' }); } catch(e) {}
+                } else showNotification('⏰ Reminder', 'Reminder: time for your activity', 'warning');
+                // show modal again to make it obvious
+                document.getElementById('modalTitle').textContent = '⏰ Reminder';
+                document.getElementById('modalText').textContent = 'Reminder: time for your activity';
+                document.getElementById('notificationModal').classList.add('active');
+            }, 5 * 60 * 1000);
         }
 
         function checkTimeAndNotify() {
