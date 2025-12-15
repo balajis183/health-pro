@@ -12,29 +12,30 @@
 <body class="dark-mode">
     <div class="app-wrapper">
         <!-- SIDEBAR -->
-        <div class="sidebar">
+        <div class="sidebar" id="sidebar" role="navigation" aria-hidden="false">
+            <button id="mobileCloseBtn" class="close-hamburger" aria-label="Close menu" onclick="closeSidebar()" title="Close menu">✖</button>
             <div class="sidebar-header">👁️ HealthPro</div>
 
             <div class="nav-section">
                 <div class="nav-label">Main</div>
-                <div class="nav-item active" onclick="switchPage('dashboard')">📊 Dashboard</div>
-                <div class="nav-item" onclick="switchPage('schedule')">📅 Schedule</div>
-                <div class="nav-item" onclick="switchPage('activities')">🎯 Activities</div>
-                <div class="nav-item" onclick="switchPage('health')">💪 Health Tips</div>
-                <div class="nav-item" onclick="switchPage('exercises')">🏃 Exercises</div>
+                <div class="nav-item active" onclick="switchPage('dashboard', this)">📊 Dashboard</div>
+                <div class="nav-item" onclick="switchPage('schedule', this)">📅 Schedule</div>
+                <div class="nav-item" onclick="switchPage('activities', this)">🎯 Activities</div>
+                <div class="nav-item" onclick="switchPage('health', this)">💪 Health Tips</div>
+                <div class="nav-item" onclick="switchPage('exercises', this)">🏃 Exercises</div>
             </div>
 
             <div class="nav-section">
                 <div class="nav-label">Tracking</div>
-                <div class="nav-item" onclick="switchPage('progress')">📈 Progress</div>
-                <div class="nav-item" onclick="switchPage('history')">📋 History</div>
-                <div class="nav-item" onclick="switchPage('statistics')">📊 Statistics</div>
+                <div class="nav-item" onclick="switchPage('progress', this)">📈 Progress</div>
+                <div class="nav-item" onclick="switchPage('history', this)">📋 History</div>
+                <div class="nav-item" onclick="switchPage('statistics', this)">📊 Statistics</div>
             </div>
 
             <div class="nav-section">
                 <div class="nav-label">Settings</div>
-                <div class="nav-item" onclick="switchPage('customize')">⚙️ Customize</div>
-                <div class="nav-item" onclick="switchPage('settings')">🔧 Settings</div>
+                <div class="nav-item" onclick="switchPage('customize', this)">⚙️ Customize</div>
+                <div class="nav-item" onclick="switchPage('settings', this)">🔧 Settings</div>
             </div>
 
             <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--color-border);">
@@ -47,8 +48,16 @@
         <div class="main-content">
             <!-- HEADER -->
             <div class="header">
-                <div>
-                    <h1>👁️ Eye Health & Wellness Pro</h1>
+                    <div>
+                        <button id="mobileMenuBtn" class="hamburger" aria-label="Open menu" aria-expanded="false" aria-controls="sidebar" onclick="toggleSidebar()" title="Open menu">☰</button>
+                        <h1>👁️ Eye Health & Wellness Pro</h1>
+                <!-- Mobile bottom navigation for quick access -->
+                <nav class="mobile-bottom-nav" aria-label="Quick navigation">
+                    <button class="nav-btn active" aria-label="Dashboard" data-page="dashboard" onclick="switchPage('dashboard', this)">🏠</button>
+                    <button class="nav-btn" aria-label="Schedule" data-page="schedule" onclick="switchPage('schedule', this)">📅</button>
+                    <button class="nav-btn" aria-label="Activities" data-page="activities" onclick="switchPage('activities', this)">🎯</button>
+                    <button class="nav-btn" aria-label="Progress" data-page="progress" onclick="switchPage('progress', this)">📈</button>
+                </nav>
                     <div style="font-size: 12px; color: var(--color-text-secondary); margin-top: 5px;">Your complete wellness companion for work-from-home professionals</div>
                 </div>
                 <div class="header-controls">
@@ -452,6 +461,15 @@
 
             // update computed statistics on load
             updateStatisticsUI();
+
+            // sync mobile bottom nav active state
+            try {
+                const activePage = document.querySelector('.page.active')?.id?.replace('-page','') || 'dashboard';
+                document.querySelectorAll('.mobile-bottom-nav .nav-btn').forEach(b => b.classList.remove('active'));
+                const btn = document.querySelector(`.mobile-bottom-nav .nav-btn[data-page="${activePage}"]`);
+                if (btn) btn.classList.add('active');
+            } catch(e) {}
+
         });
 
         // scheduling helpers
@@ -533,12 +551,22 @@
             renderUpcomingReminders();
         }
 
-        function switchPage(pageName) {
+        function switchPage(pageName, clickedEl) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.getElementById(`${pageName}-page`).classList.add('active');
-            
+            const targetPage = document.getElementById(`${pageName}-page`);
+            if (targetPage) targetPage.classList.add('active');
+
+            // remove active on all navs and set on clicked
             document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
-            event.target.classList.add('active');
+            if (clickedEl) clickedEl.classList.add('active');
+
+            // sync mobile bottom nav
+            document.querySelectorAll('.mobile-bottom-nav .nav-btn').forEach(b => b.classList.remove('active'));
+            const btn = document.querySelector(`.mobile-bottom-nav .nav-btn[data-page="${pageName}"]`);
+            if (btn) btn.classList.add('active');
+
+            // close sidebar on mobile for better UX
+            if (window.innerWidth < 900) closeSidebar();
         }
 
         function switchExerciseTab(tab) {
@@ -817,6 +845,59 @@
                 document.getElementById('notificationModal').classList.add('active');
             }, 5 * 60 * 1000);
         }
+
+        // Mobile nav helpers (ensure ARIA updated)
+        function toggleSidebar() {
+            const sb = document.getElementById('sidebar');
+            const overlay = document.getElementById('mobileOverlay');
+            const btn = document.getElementById('mobileMenuBtn');
+            if (!sb) return;
+            const opening = !sb.classList.contains('open');
+            if (opening) {
+                sb.classList.add('open');
+                sb.classList.remove('mobile-hidden');
+                sb.setAttribute('aria-hidden', 'false');
+                overlay.classList.add('active'); overlay.setAttribute('aria-hidden', 'false');
+                if (btn) btn.setAttribute('aria-expanded', 'true');
+                setTimeout(() => document.getElementById('mobileCloseBtn')?.focus(), 80);
+                document.body.style.overflow = 'hidden';
+            } else {
+                closeSidebar();
+            }
+        }
+
+        function closeSidebar() {
+            const sb = document.getElementById('sidebar');
+            const overlay = document.getElementById('mobileOverlay');
+            const btn = document.getElementById('mobileMenuBtn');
+            if (!sb) return;
+            sb.classList.remove('open');
+            sb.classList.add('mobile-hidden');
+            sb.setAttribute('aria-hidden', 'true');
+            overlay.classList.remove('active'); overlay.setAttribute('aria-hidden', 'true');
+            if (btn) btn.setAttribute('aria-expanded', 'false');
+            document.body.style.overflow = '';
+            btn?.focus();
+        }
+
+        // ensure sidebar state aligns with viewport changes
+        window.addEventListener('resize', () => {
+            const sb = document.getElementById('sidebar');
+            const overlay = document.getElementById('mobileOverlay');
+            const btn = document.getElementById('mobileMenuBtn');
+            if (!sb) return;
+            if (window.innerWidth > 900) {
+                sb.classList.remove('mobile-hidden');
+                sb.classList.remove('open');
+                sb.setAttribute('aria-hidden', 'false');
+                overlay.classList.remove('active'); overlay.setAttribute('aria-hidden', 'true');
+                document.body.style.overflow = '';
+                if (btn) btn.setAttribute('aria-expanded', 'false');
+            } else {
+                sb.classList.add('mobile-hidden');
+                sb.setAttribute('aria-hidden', 'true');
+            }
+        });
 
         function checkTimeAndNotify() {
             const now = new Date();
